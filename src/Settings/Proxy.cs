@@ -17,7 +17,7 @@ namespace HybridConnectionClientProxy.Settings
 		{
 			get
 			{
-				IPAddress ip;
+				IPAddress? ip;
 				if( !IPAddress.TryParse( ListenIPAddress, out ip ) )
 				{
 					ip = IPAddress.Loopback;
