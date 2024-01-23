@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.8.34330.188
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HybridConnectionClientProxy", "HybridConnectionClientProxy.csproj", "{5129B416-0657-4D5E-AEEB-186E536E6DCC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5129B416-0657-4D5E-AEEB-186E536E6DCC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5129B416-0657-4D5E-AEEB-186E536E6DCC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5129B416-0657-4D5E-AEEB-186E536E6DCC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5129B416-0657-4D5E-AEEB-186E536E6DCC}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {26499249-4A8E-4641-93E2-B6803FF3DAA4}
+	EndGlobalSection
+EndGlobal
