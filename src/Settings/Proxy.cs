@@ -9,6 +9,7 @@ namespace HybridConnectionClientProxy.Settings
 {
 	public class Proxy
 	{
+		public String? Name {  get; set; } // Purely decorative
 		public String? HybridConnectionString { get; set; }
 		public String? ListenIPAddress { get; set; }
 		public int ListenPort { get; set; }

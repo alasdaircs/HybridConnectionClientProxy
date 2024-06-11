@@ -10,6 +10,6 @@ namespace HybridConnectionClientProxy.Settings
 	{
 		public const String Section = "AppSettings";
 
-		public Proxy[]? Proxies { get; set; } = new Proxy[0];
+		public Proxy[]? Proxies { get; set; } = Array.Empty<Proxy>();
 	}
 }
