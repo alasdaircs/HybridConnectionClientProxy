@@ -9,10 +9,10 @@ namespace HybridConnectionClientProxy
 	internal class ConfigurationLocator
 	{
 		public const String DefaultsFile
-				= "appsettings.json";
+			= "appsettings.json";
 
-		public const String OverlayFileName
-				= "appsettings.json";
+		public static String OverlayFileName
+			=> $"appsettings.{Environment.MachineName}.json";
 
 		public static String OverlayFilePath
 		{

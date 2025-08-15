@@ -363,5 +363,6 @@ MigrationBackup/
 FodyWeavers.xsd
 
 # Project-level exclusions
-/config/appsettings.json
+/config/*.json
+!/config/appsettings.template.json
 /logs/*

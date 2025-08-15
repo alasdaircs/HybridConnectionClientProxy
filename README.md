@@ -7,7 +7,7 @@ If you run your code on-prem, you can usually connect directly to your on-prem r
 
 ## How does it work in Azure then?
 
-Under the hood, Microsoft implement the client-side (running in your Azure Web App) of the Hybrid Connections by loading a process called workerforwarder.exe under the active website in IIS. You can see it in the Process Explorer in [Kudu](https://\<yoursite\>.scm.azurewebsites.net/ProcessExplorer) and if you look around the DebugConsole you'll see the binaries in `C:\Program Files\PortBridge`. It's a bit old and it's configuration comes from an environment variable called `WEBSITE_RELAYS` whose contents are Base64-encoded XML. It's written in old-schood .NET Framework 4.7. The clumsy configuration alone means it's not really usable as-is in your dev or production environment.
+Under the hood, Microsoft implement the client-side (running in your Azure Web App) of the Hybrid Connections by loading a process called workerforwarder.exe under the active website in IIS. You can see it in the Process Explorer in [Kudu](https://\<yoursite\>.scm.azurewebsites.net/ProcessExplorer) and if you look around the DebugConsole you'll see the binaries in `C:\Program Files\PortBridge`. It's a bit old and its configuration comes from an environment variable called `WEBSITE_RELAYS` whose contents are Base64-encoded XML. It's written in old-schood .NET Framework 4.7. The clumsy configuration alone means it's not really usable as-is in your dev or production environment.
 
 ## Enter the Hybrid Connection Client Proxy
 *Connect to on-prem resources from anywhere.*
@@ -19,6 +19,7 @@ Hybrid Connection Client Proxy is
 - Runs from anywhere - tested on Windows but should run on Mac, Linux etc - anywhere .NET runs
 
 ## Configuration
+Configuration is read from a local appSettings.json and then from ..\config\appSettings.\{MachineName\}.json, so you can keep your config separate from the binaries and point multiple machines at the same folder and get per-machine configuration
 
 If using appSettings.json the format is like this:
 ```
