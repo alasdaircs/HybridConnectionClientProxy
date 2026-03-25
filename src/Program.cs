@@ -55,7 +55,7 @@ Log.Information( "Starting" );
 if( appSettings.Proxies.Length == 0 )
 	throw new InvalidOperationException( "You must specify at least one proxy in the configuration." );
 
-var cts = new CancellationTokenSource();
+using var cts = new CancellationTokenSource();
 var proxyTasks = new List<Task>();
 
 foreach( var proxy in appSettings.Proxies )

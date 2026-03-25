@@ -8,11 +8,6 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
 
-  <!-- Add Xunit to implicit usings so test files don't need an explicit 'using Xunit;' -->
-  <ItemGroup>
-    <Using Include="Xunit" />
-  </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
     <PackageReference Include="xunit.v3" Version="3.2.2" />

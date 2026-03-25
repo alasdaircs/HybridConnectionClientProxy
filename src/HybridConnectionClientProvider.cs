@@ -15,5 +15,5 @@ internal sealed class HybridConnectionClientProvider : IHybridConnectionProvider
 	}
 
 	public async Task<Stream> CreateConnectionAsync( CancellationToken cancellationToken = default )
-		=> await _client.CreateConnectionAsync();
+		=> await _client.CreateConnectionAsync( cancellationToken );
 }
