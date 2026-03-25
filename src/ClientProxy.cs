@@ -1,83 +1,75 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Sockets;
 
-using Microsoft.Azure.Relay;
+using Serilog;
 
-namespace HybridConnectionClientProxy
+namespace HybridConnectionClientProxy;
+
+public class ClientProxy
 {
-	public class ClientProxy
-		: IDisposable
+	private ClientProxy() { }
+
+	private async Task Run(
+		IHybridConnectionProvider hycoProvider,
+		TcpListener tcpListener,
+		bool ownsListener,
+		CancellationToken cancellation )
 	{
-		private bool disposedValue;
+		// CancellationTokenSource is created and disposed within Run, so no leak
+		using var cts = CancellationTokenSource.CreateLinkedTokenSource( cancellation );
 
-		protected CancellationTokenSource? _cts;
-
-		protected ClientProxy()
-		{
-		}
-
-		protected async Task Run( String hycoConnectionString, IPAddress listenAddress, int listenPort, CancellationToken cancellation = default )
-		{
-			_cts = CancellationTokenSource.CreateLinkedTokenSource( cancellation );
-			using var tcpListener = new TcpListener( listenAddress, listenPort );
-			var hycoClient = new HybridConnectionClient( hycoConnectionString );
+		if( ownsListener )
 			tcpListener.Start();
 
-			try
-			{
-				while( !_cts.IsCancellationRequested )
-				{
-					var tcpClient = await tcpListener.AcceptTcpClientAsync( _cts.Token );
-					var _ = ClientProxyConnection.Create( tcpClient, hycoClient, _cts.Token );
-				}
-			}
-			catch( OperationCanceledException )
-			{
-				// quiet
-			}
-			catch( Exception ex )
-			{
-				Console.WriteLine( ex.ToString() );
-			}
-		}
-
-		public static Task Create( String hycoConnectionString, IPAddress listenAddress, int listenPort, CancellationToken cancellation = default )
+		try
 		{
-			var clientProxy = new ClientProxy();
-			return clientProxy.Run( hycoConnectionString, listenAddress, listenPort, cancellation );
-		}
-
-		protected virtual void Dispose( bool disposing )
-		{
-			if( !disposedValue )
+			while( !cts.IsCancellationRequested )
 			{
-				if( disposing )
-				{
-					// TODO: dispose managed state (managed objects)
-					if( _cts != null && _cts.Token.CanBeCanceled )
-					{
-						_cts.Cancel();
-					}
-				}
-
-				// TODO: free unmanaged resources (unmanaged objects) and override finalizer
-				// TODO: set large fields to null
-				disposedValue = true;
+				var tcpClient = await tcpListener.AcceptTcpClientAsync( cts.Token );
+				_ = ClientProxyConnection.Create( tcpClient, hycoProvider, cts.Token );
 			}
 		}
-
-		// // TODO: override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources
-		// ~ClientProxy()
-		// {
-		//     // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
-		//     Dispose(disposing: false);
-		// }
-
-		public void Dispose()
+		catch( OperationCanceledException )
 		{
-			// Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
-			Dispose( disposing: true );
-			GC.SuppressFinalize( this );
+			// quiet — expected on shutdown
 		}
+		catch( Exception ex )
+		{
+			Log.Error( ex, "ClientProxy encountered an unexpected error" );
+		}
+		finally
+		{
+			if( ownsListener )
+				tcpListener.Stop();
+		}
+	}
+
+	/// <summary>
+	/// Creates and starts a proxy that listens on <paramref name="listenAddress"/>:<paramref name="listenPort"/>
+	/// and forwards each accepted connection through the given Azure Hybrid Connection string.
+	/// </summary>
+	public static Task Create(
+		string hycoConnectionString,
+		IPAddress listenAddress,
+		int listenPort,
+		CancellationToken cancellation = default )
+	{
+		var proxy = new ClientProxy();
+		var provider = new HybridConnectionClientProvider( hycoConnectionString );
+		var listener = new TcpListener( listenAddress, listenPort );
+		return proxy.Run( provider, listener, ownsListener: true, cancellation );
+	}
+
+	/// <summary>
+	/// Internal overload used by tests: caller owns the <paramref name="tcpListener"/> lifecycle
+	/// (Start/Stop), allowing the port to be inspected before passing it in.
+	/// </summary>
+	internal static Task Create(
+		IHybridConnectionProvider hycoProvider,
+		TcpListener tcpListener,
+		CancellationToken cancellation = default )
+	{
+		var proxy = new ClientProxy();
+		return proxy.Run( hycoProvider, tcpListener, ownsListener: false, cancellation );
 	}
 }

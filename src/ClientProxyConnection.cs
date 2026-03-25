@@ -1,82 +1,56 @@
-﻿using System.Net.Sockets;
+using System.Net.Sockets;
 
-using Microsoft.Azure.Relay;
+using Serilog;
 
-namespace HybridConnectionClientProxy
+namespace HybridConnectionClientProxy;
+
+internal class ClientProxyConnection
 {
-	public class ClientProxyConnection
-		: IDisposable
+	private ClientProxyConnection() { }
+
+	private async Task Run( TcpClient tcpClient, IHybridConnectionProvider hycoProvider, CancellationToken cancellation )
 	{
-		private bool disposedValue;
-		protected CancellationTokenSource? _cts;
+		// Both the CancellationTokenSource and the TcpClient are disposed here,
+		// eliminating the leaks present in the original design where Create() discarded the instance.
+		using var cts = CancellationTokenSource.CreateLinkedTokenSource( cancellation );
+		using var _ = tcpClient;
 
-		protected ClientProxyConnection()
+		try
 		{
-		}
+			using var tcpStream = tcpClient.GetStream();
+			using var hycoStream = await hycoProvider.CreateConnectionAsync( cts.Token );
 
-		protected async Task Run( TcpClient tcpClient, HybridConnectionClient hycoClient, CancellationToken cancellation )
+			var sendPump    = tcpStream.CopyToAsync( hycoStream,  cts.Token );
+			var receivePump = hycoStream.CopyToAsync( tcpStream,  cts.Token );
+
+			// Wait for whichever side closes first, then cancel the other pump
+			// so it is not left running indefinitely (original bug: orphaned task).
+			await Task.WhenAny( sendPump, receivePump );
+			await cts.CancelAsync();
+
+			// Await both pumps so exceptions are observed and resources released cleanly.
+			// Errors here are diagnostic only — the connection is already closing.
+			try { await sendPump; }
+			catch( Exception ex ) when( ex is not OperationCanceledException )
+			{ Log.Debug( ex, "Send pump closed with error" ); }
+
+			try { await receivePump; }
+			catch( Exception ex ) when( ex is not OperationCanceledException )
+			{ Log.Debug( ex, "Receive pump closed with error" ); }
+		}
+		catch( OperationCanceledException )
 		{
-			try
-			{
-				_cts = CancellationTokenSource.CreateLinkedTokenSource( cancellation );
-				using var tcpStream = tcpClient.GetStream();
-				using var hycoStream = await hycoClient.CreateConnectionAsync();
-
-				var sendPump = tcpStream.CopyToAsync( hycoStream, _cts.Token );
-				var receivePump = hycoStream.CopyToAsync( tcpStream, _cts.Token );
-				await Task.WhenAny( sendPump, receivePump );
-				await Task.WhenAll(
-					tcpStream.FlushAsync(),
-					hycoStream.FlushAsync() 
-				);
-			}
-			catch( OperationCanceledException )
-			{
-				// quiet
-			}
-			catch( Exception ex )
-			{ 
-				Console.WriteLine( ex.ToString() );
-			}
+			// quiet — expected on shutdown or when the remote side closes first
 		}
-
-		public static Task Create( TcpClient tcpClient, HybridConnectionClient hycoClient, CancellationToken cancellation )
+		catch( Exception ex )
 		{
-			var connection = new ClientProxyConnection();
-			return connection.Run( tcpClient, hycoClient, cancellation );
+			Log.Error( ex, "ClientProxyConnection encountered an unexpected error" );
 		}
+	}
 
-		protected virtual void Dispose( bool disposing )
-		{
-			if( !disposedValue )
-			{
-				if( disposing )
-				{
-					// TODO: dispose managed state (managed objects)
-					if( _cts != null && _cts.Token.CanBeCanceled )
-					{
-						_cts.Cancel();
-					}
-				}
-
-				// TODO: free unmanaged resources (unmanaged objects) and override finalizer
-				// TODO: set large fields to null
-				disposedValue = true;
-			}
-		}
-
-		// // TODO: override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources
-		// ~ClientProxyConnection()
-		// {
-		//     // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
-		//     Dispose(disposing: false);
-		// }
-
-		public void Dispose()
-		{
-			// Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
-			Dispose( disposing: true );
-			GC.SuppressFinalize( this );
-		}
+	internal static Task Create( TcpClient tcpClient, IHybridConnectionProvider hycoProvider, CancellationToken cancellation )
+	{
+		var connection = new ClientProxyConnection();
+		return connection.Run( tcpClient, hycoProvider, cancellation );
 	}
 }

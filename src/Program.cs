@@ -1,13 +1,12 @@
-﻿using HybridConnectionClientProxy;
+using HybridConnectionClientProxy;
 using HybridConnectionClientProxy.Settings;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 
 using Serilog;
-using Serilog.Events;
 
-// Bootstrap logger
+// Bootstrap logger — replaced after full configuration is loaded
 Log.Logger = new LoggerConfiguration()
 	.Enrich.FromLogContext()
 	.WriteTo.Console()
@@ -17,9 +16,9 @@ Log.Logger = new LoggerConfiguration()
 Log.Information( "Reading Configuration" );
 var configurationManager = new ConfigurationManager();
 configurationManager.AddJsonFile( ConfigurationLocator.DefaultsFile );
-configurationManager.AddJsonFile( ConfigurationLocator.OverlayFile, true );
+configurationManager.AddJsonFile( ConfigurationLocator.OverlayFile, optional: true );
 #if DEBUG
-configurationManager.AddUserSecrets( typeof(Program).Assembly, true );
+configurationManager.AddUserSecrets( typeof( Program ).Assembly, optional: true );
 #endif
 configurationManager.AddEnvironmentVariables();
 configurationManager.AddCommandLine( args );
@@ -28,7 +27,7 @@ Log.Logger = new LoggerConfiguration()
 	.ReadFrom.Configuration( configurationManager )
 	.CreateLogger();
 
-Log.Information( "Started in {workingDirectory}", Environment.CurrentDirectory );
+Log.Information( "Started in {WorkingDirectory}", Environment.CurrentDirectory );
 
 var files = configurationManager.GetFileProvider();
 Log.Debug(
@@ -44,7 +43,7 @@ Log.Debug(
 
 foreach( var entry in configurationManager.AsEnumerable().OrderBy( pair => pair.Key ) )
 {
-	Log.Verbose( "{config} = {value}", entry.Key, entry.Value );
+	Log.Verbose( "{Config} = {Value}", entry.Key, entry.Value );
 }
 
 var configurationSection = configurationManager.GetRequiredSection( AppSettings.Section );
@@ -52,36 +51,30 @@ var appSettings = new AppSettings();
 ConfigurationBinder.Bind( configurationSection, appSettings );
 
 Log.Information( "Starting" );
+
+if( appSettings.Proxies.Length == 0 )
+	throw new InvalidOperationException( "You must specify at least one proxy in the configuration." );
+
 var cts = new CancellationTokenSource();
 var proxyTasks = new List<Task>();
-if( appSettings.Proxies == null || appSettings.Proxies.Length == 0 )
-{
-	throw new Exception( "You must specify at least one proxy in the configuration." );
-}
-else
-{
-	foreach( var proxy in appSettings.Proxies )
-	{
-		if( proxy.HybridConnectionString == null )
-		{
-			throw new Exception( "Every proxy in configuration must have a HybridConnectionString." );
-		}
 
-		if( proxy.ListenPort == 0 )
-		{
-			throw new Exception( "Every proxy in configuration must have a ListenPort." );
-		}
+foreach( var proxy in appSettings.Proxies )
+{
+	if( proxy.HybridConnectionString is null )
+		throw new InvalidOperationException( "Every proxy in configuration must have a HybridConnectionString." );
 
-		Log.Debug( "Adding proxy {proxyName}", proxy.Name );
-		proxyTasks.Add(
-			ClientProxy.Create( 
-				proxy.HybridConnectionString,
-				proxy.ListenAddress,
-				proxy.ListenPort,
-				cts.Token
-			)
-		);
-	}
+	if( proxy.ListenPort == 0 )
+		throw new InvalidOperationException( "Every proxy in configuration must have a ListenPort." );
+
+	Log.Debug( "Adding proxy {ProxyName}", proxy.Name );
+	proxyTasks.Add(
+		ClientProxy.Create(
+			proxy.HybridConnectionString,
+			proxy.ListenAddress,
+			proxy.ListenPort,
+			cts.Token
+		)
+	);
 }
 
 Log.Information( "Running" );
@@ -89,7 +82,7 @@ Console.WriteLine( "Press a key to stop" );
 Console.ReadKey( true );
 
 Log.Information( "Stopping" );
-cts.Cancel();
+await cts.CancelAsync();
 await Task.WhenAll( proxyTasks );
 
 Log.Information( "Stopped" );

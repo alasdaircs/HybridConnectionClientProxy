@@ -1,50 +1,37 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+namespace HybridConnectionClientProxy;
 
-namespace HybridConnectionClientProxy
+internal static class ConfigurationLocator
 {
-	internal class ConfigurationLocator
+	/// <summary>
+	/// Lowercase convention matches ASP.NET Core and is case-safe on Linux.
+	/// Previously "appSettings.json" (capital S) would silently fail on case-sensitive file systems.
+	/// </summary>
+	public const string DefaultsFile = "appsettings.json";
+
+	public static string OverlayFileName
+		=> $"appsettings.{Environment.MachineName}.json";
+
+	public static string OverlayFilePath
 	{
-		public const String DefaultsFile
-			= "appsettings.json";
-
-		public static String OverlayFileName
-			=> $"appsettings.{Environment.MachineName}.json";
-
-		public static String OverlayFilePath
+		get
 		{
-			get
+			var segments = Environment.CurrentDirectory.Split( Path.DirectorySeparatorChar );
+			int binpos = segments.Length - 1;
+
+			for( int i = segments.Length - 1; i >= 0; i-- )
 			{
-				var segments = Environment.CurrentDirectory.Split( Path.DirectorySeparatorChar  );
-				Int32 binpos = segments.Length - 1;
-
-				for( int i = segments.Length - 1; i >= 0; i-- )
+				if( StringComparer.InvariantCultureIgnoreCase.Equals( segments[i], "bin" ) )
 				{
-					if( StringComparer.InvariantCultureIgnoreCase.Equals( segments[i], "bin" ) )
-					{
-						binpos = i;
-						break;
-					}
+					binpos = i;
+					break;
 				}
-
-				var parentpath = String.Join( Path.DirectorySeparatorChar, segments.Take( binpos ) );
-				// var parentpath = string.Join( Path.DirectorySeparatorChar, Enumerable.Repeat( "..", segments.Length - binpos ) );
-
-				return
-					Path.Combine(
-						parentpath,
-						"config"
-					);
 			}
-		}
 
-		public static String OverlayFile
-				= Path.Combine(
-						OverlayFilePath,
-						OverlayFileName
-					);
+			var parentPath = string.Join( Path.DirectorySeparatorChar, segments.Take( binpos ) );
+			return Path.Combine( parentPath, "config" );
+		}
 	}
+
+	public static string OverlayFile
+		=> Path.Combine( OverlayFilePath, OverlayFileName );
 }
