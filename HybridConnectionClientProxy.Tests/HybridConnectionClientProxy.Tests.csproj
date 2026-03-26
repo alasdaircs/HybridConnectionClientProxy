@@ -10,8 +10,13 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
-    <PackageReference Include="xunit.v3" Version="3.2.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+    <!--
+      xunit v2 (2.9.3) is the latest stable release using the standard VSTest/dotnet-test
+      pipeline. xunit.v3 (3.x) switched to the Microsoft Testing Platform (MTP) which
+      requires a different runner setup not yet compatible with this project's CI.
+    -->
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
