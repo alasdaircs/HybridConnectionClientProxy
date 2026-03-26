@@ -30,7 +30,7 @@ public class AzureIntegrationTests
 	public async Task AzureProxy_WhenClientConnects_ConnectionEstablishedWithoutError()
 	{
 		var connStr = GetConnectionString();
-		Skip.If( connStr is null, "No Azure credentials in appsettings.Test.json" );
+		if( connStr is null ) Assert.Skip( "No Azure credentials in appsettings.Test.json" );
 
 		using var cts = new CancellationTokenSource( TimeoutMs );
 
@@ -53,7 +53,7 @@ public class AzureIntegrationTests
 	public async Task AzureProxy_WhenClientDisconnects_CleansUpPromptly()
 	{
 		var connStr = GetConnectionString();
-		Skip.If( connStr is null, "No Azure credentials in appsettings.Test.json" );
+		if( connStr is null ) Assert.Skip( "No Azure credentials in appsettings.Test.json" );
 
 		using var cts = new CancellationTokenSource( TimeoutMs );
 
@@ -81,7 +81,7 @@ public class AzureIntegrationTests
 	public async Task AzureProxy_SmtpEhlo_ServerResponds250()
 	{
 		var connStr = GetConnectionString();
-		Skip.If( connStr is null, "No Azure credentials in appsettings.Test.json" );
+		if( connStr is null ) Assert.Skip( "No Azure credentials in appsettings.Test.json" );
 
 		using var cts = new CancellationTokenSource( TimeoutMs );
 
