@@ -28,7 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\HybridConnectionClientProxy.csproj" />
+    <ProjectReference Include="..\HybridConnectionClientProxy\HybridConnectionClientProxy.csproj" />
   </ItemGroup>
 
 </Project>

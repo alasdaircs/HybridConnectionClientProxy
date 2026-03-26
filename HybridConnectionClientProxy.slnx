@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="HybridConnectionClientProxy/HybridConnectionClientProxy.csproj" />
+  <Project Path="HybridConnectionClientProxy.Tests/HybridConnectionClientProxy.Tests.csproj" />
+</Solution>

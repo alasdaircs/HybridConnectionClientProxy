@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include=".github\workflows\dotnet.yml" />
+    <None Include="../.github/workflows/dotnet.yml" />
   </ItemGroup>
 
   <ItemGroup>
@@ -44,7 +44,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="logs\" />
+    <Folder Include="logs/" />
   </ItemGroup>
 
 </Project>
