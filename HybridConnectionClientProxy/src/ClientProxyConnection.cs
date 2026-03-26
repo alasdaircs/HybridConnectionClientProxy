@@ -28,8 +28,14 @@ internal class ClientProxyConnection
 			await Task.WhenAny( sendPump, receivePump );
 			await cts.CancelAsync();
 
+			// HybridConnectionStream.ReadAsync does not reliably unblock when its
+			// CancellationToken is cancelled, so explicitly close both streams to
+			// force any blocked reads to throw immediately rather than hanging.
+			try { tcpStream.Close(); }  catch { }
+			try { hycoStream.Close(); } catch { }
+
 			// Await both pumps so exceptions are observed and resources released cleanly.
-			// Errors here are diagnostic only — the connection is already closing.
+			// Errors here are diagnostic only - the connection is already closing.
 			try { await sendPump; }
 			catch( Exception ex ) when( ex is not OperationCanceledException )
 			{ Log.Debug( ex, "Send pump closed with error" ); }
@@ -40,7 +46,7 @@ internal class ClientProxyConnection
 		}
 		catch( OperationCanceledException )
 		{
-			// quiet — expected on shutdown or when the remote side closes first
+			// quiet - expected on shutdown or when the remote side closes first
 		}
 		catch( Exception ex )
 		{
