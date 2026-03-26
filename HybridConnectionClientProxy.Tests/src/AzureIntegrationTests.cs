@@ -78,7 +78,7 @@ public class AzureIntegrationTests
 	}
 
 	[Fact]
-	public async Task AzureProxy_DataFlow_ClientToBackend()
+	public async Task AzureProxy_SmtpEhlo_ServerResponds250()
 	{
 		var connStr = GetConnectionString();
 		Skip.If( connStr is null, "No Azure credentials in appsettings.Test.json" );
@@ -91,16 +91,21 @@ public class AzureIntegrationTests
 
 		using var client = new TcpClient();
 		await client.ConnectAsync( IPAddress.Loopback, proxyPort, cts.Token );
-		var stream = client.GetStream();
+		using var reader = new StreamReader( client.GetStream(), Encoding.ASCII, leaveOpen: true );
+		using var writer = new StreamWriter( client.GetStream(), Encoding.ASCII, leaveOpen: true ) { NewLine = "\r\n", AutoFlush = true };
 
-		// Send a recognisable payload — the backend is expected to echo it back
-		var sent = Encoding.UTF8.GetBytes( "PING" );
-		await stream.WriteAsync( sent, cts.Token );
-		await stream.FlushAsync( cts.Token );
+		// Server must send a 220 greeting
+		var greeting = await ReadSmtpResponseAsync( reader, cts.Token );
+		Assert.StartsWith( "220", greeting );
 
-		var received = new byte[4];
-		await ReadExactAsync( stream, received, cts.Token );
-		Assert.Equal( sent, received );
+		// Send EHLO and expect 250
+		await writer.WriteLineAsync( "EHLO test" );
+		var response = await ReadSmtpResponseAsync( reader, cts.Token );
+		Assert.StartsWith( "250", response );
+
+		// Quit cleanly
+		await writer.WriteLineAsync( "QUIT" );
+		await ReadSmtpResponseAsync( reader, cts.Token );
 
 		await cts.CancelAsync();
 		proxyListener.Stop();
@@ -134,14 +139,20 @@ public class AzureIntegrationTests
 		return (listener, ((IPEndPoint) listener.LocalEndpoint).Port);
 	}
 
-	private static async Task ReadExactAsync( Stream stream, byte[] buffer, CancellationToken ct )
+	/// <summary>
+	/// Reads a (possibly multi-line) SMTP response and returns the final line.
+	/// Multi-line responses use "NNN-text" for continuation lines and "NNN text" for the last.
+	/// </summary>
+	private static async Task<string> ReadSmtpResponseAsync( StreamReader reader, CancellationToken ct )
 	{
-		int total = 0;
-		while( total < buffer.Length )
+		string? line;
+		do
 		{
-			int n = await stream.ReadAsync( buffer.AsMemory( total ), ct );
-			if( n == 0 ) throw new EndOfStreamException( $"Stream ended after {total}/{buffer.Length} bytes." );
-			total += n;
+			line = await reader.ReadLineAsync( ct );
+			if( line is null ) throw new EndOfStreamException( "SMTP server closed the connection." );
 		}
+		while( line.Length >= 4 && line[3] == '-' ); // continuation line
+
+		return line;
 	}
 }
