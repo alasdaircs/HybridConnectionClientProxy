@@ -34,15 +34,10 @@ internal class ClientProxyConnection
 			try { tcpStream.Close(); }  catch { }
 			try { hycoStream.Close(); } catch { }
 
-			// Await both pumps so exceptions are observed and resources released cleanly.
-			// Errors here are diagnostic only - the connection is already closing.
-			try { await sendPump; }
-			catch( Exception ex ) when( ex is not OperationCanceledException )
-			{ Log.Debug( ex, "Send pump closed with error" ); }
-
-			try { await receivePump; }
-			catch( Exception ex ) when( ex is not OperationCanceledException )
-			{ Log.Debug( ex, "Receive pump closed with error" ); }
+			// Await both pumps to ensure exceptions are observed and resources released.
+			// Any exception here is expected - both streams have been explicitly closed.
+			try { await sendPump; }    catch { }
+			try { await receivePump; } catch { }
 		}
 		catch( OperationCanceledException )
 		{
