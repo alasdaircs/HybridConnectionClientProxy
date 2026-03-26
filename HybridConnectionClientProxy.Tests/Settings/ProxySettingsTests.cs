@@ -1,6 +1,7 @@
 using System.Net;
 
 using HybridConnectionClientProxy.Settings;
+using Xunit;
 
 namespace HybridConnectionClientProxy.Tests.Settings;
 

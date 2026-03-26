@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace HybridConnectionClientProxy.Tests;
 
 public class ConfigurationLocatorTests
