@@ -25,4 +25,10 @@
     <ProjectReference Include="..\HybridConnectionClientProxy\HybridConnectionClientProxy.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="appsettings.Test.json" Condition="Exists('appsettings.Test.json')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

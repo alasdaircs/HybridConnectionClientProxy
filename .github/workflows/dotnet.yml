@@ -20,6 +20,9 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 10.0.x
+    - name: Write test appsettings
+      if: ${{ secrets.APPSETTINGS != '' }}
+      run: echo '${{ secrets.APPSETTINGS }}' > HybridConnectionClientProxy.Tests/appsettings.Test.json
     - name: Restore dependencies
       run: dotnet restore HybridConnectionClientProxy.slnx
     - name: Build
