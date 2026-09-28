@@ -32,4 +32,4 @@ jobs:
     - name: Build
       run: dotnet build HybridConnectionClientProxy.slnx --no-restore
     - name: Test
-      run: dotnet test HybridConnectionClientProxy.slnx --no-restore --verbosity normal
+      run: dotnet test --solution HybridConnectionClientProxy.slnx --no-restore
