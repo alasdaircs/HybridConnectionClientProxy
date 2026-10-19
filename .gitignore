@@ -366,3 +366,4 @@ FodyWeavers.xsd
 /config/*.json
 !/config/appsettings.template.json
 /logs/*
+/dist/

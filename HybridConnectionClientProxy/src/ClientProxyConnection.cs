@@ -8,17 +8,37 @@ internal class ClientProxyConnection
 {
 	private ClientProxyConnection() { }
 
-	private async Task Run( TcpClient tcpClient, IHybridConnectionProvider hycoProvider, CancellationToken cancellation )
+	private async Task Run( TcpClient tcpClient, IHybridConnectionProvider hycoProvider, string proxyLabel, int id, CancellationToken cancellation )
 	{
 		// Both the CancellationTokenSource and the TcpClient are disposed here,
 		// eliminating the leaks present in the original design where Create() discarded the instance.
 		using var cts = CancellationTokenSource.CreateLinkedTokenSource( cancellation );
 		using var _ = tcpClient;
 
+		var remote = tcpClient.Client.RemoteEndPoint;
+		Log.Debug( "Proxy {Proxy}: connection {ConnectionId} accepted from {Remote}", proxyLabel, id, remote );
+
 		try
 		{
 			using var tcpStream = tcpClient.GetStream();
-			using var hycoStream = await hycoProvider.CreateConnectionAsync( cts.Token );
+
+			Stream hycoStream;
+			try
+			{
+				hycoStream = await hycoProvider.CreateConnectionAsync( cts.Token );
+			}
+			catch( Exception ex ) when( ex is not OperationCanceledException )
+			{
+				// The relay (or the on-prem listener behind it) is unavailable: drop this client, keep listening.
+				Log.Warning(
+					"Proxy {Proxy}: connection {ConnectionId} dropped, relay connection failed: {Error}",
+					proxyLabel, id, SecretRedactor.Describe( ex )
+				);
+				return;
+			}
+
+			using var __ = hycoStream;
+			Log.Debug( "Proxy {Proxy}: connection {ConnectionId} relayed", proxyLabel, id );
 
 			var sendPump    = tcpStream.CopyToAsync( hycoStream,  cts.Token );
 			var receivePump = hycoStream.CopyToAsync( tcpStream,  cts.Token );
@@ -38,6 +58,8 @@ internal class ClientProxyConnection
 			// Any exception here is expected - both streams have been explicitly closed.
 			try { await sendPump; }    catch { }
 			try { await receivePump; } catch { }
+
+			Log.Debug( "Proxy {Proxy}: connection {ConnectionId} closed", proxyLabel, id );
 		}
 		catch( OperationCanceledException )
 		{
@@ -45,13 +67,13 @@ internal class ClientProxyConnection
 		}
 		catch( Exception ex )
 		{
-			Log.Error( ex, "ClientProxyConnection encountered an unexpected error" );
+			Log.Error( "Proxy {Proxy}: connection {ConnectionId} failed: {Error}", proxyLabel, id, SecretRedactor.Describe( ex ) );
 		}
 	}
 
-	internal static Task Create( TcpClient tcpClient, IHybridConnectionProvider hycoProvider, CancellationToken cancellation )
+	internal static Task Create( TcpClient tcpClient, IHybridConnectionProvider hycoProvider, string proxyLabel, int id, CancellationToken cancellation )
 	{
 		var connection = new ClientProxyConnection();
-		return connection.Run( tcpClient, hycoProvider, cancellation );
+		return connection.Run( tcpClient, hycoProvider, proxyLabel, id, cancellation );
 	}
 }

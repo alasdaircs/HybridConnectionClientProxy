@@ -3,6 +3,8 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 
+using HybridConnectionClientProxy.Settings;
+
 using Xunit;
 
 namespace HybridConnectionClientProxy.Tests;
@@ -34,7 +36,7 @@ public class AzureIntegrationTests
 
 		using var cts = new CancellationTokenSource( TimeoutMs );
 
-		var provider = new HybridConnectionClientProvider( connStr! );
+		var provider = HybridConnectionProviderFactory.Create( new Proxy { HybridConnectionString = connStr }, "azure-test" );
 		var (proxyListener, proxyPort) = StartListener();
 		var proxyTask = ClientProxy.Create( provider, proxyListener, cts.Token );
 
@@ -57,7 +59,7 @@ public class AzureIntegrationTests
 
 		using var cts = new CancellationTokenSource( TimeoutMs );
 
-		var provider = new HybridConnectionClientProvider( connStr! );
+		var provider = HybridConnectionProviderFactory.Create( new Proxy { HybridConnectionString = connStr }, "azure-test" );
 		var (proxyListener, proxyPort) = StartListener();
 		var proxyTask = ClientProxy.Create( provider, proxyListener, cts.Token );
 
@@ -85,7 +87,7 @@ public class AzureIntegrationTests
 
 		using var cts = new CancellationTokenSource( TimeoutMs );
 
-		var provider = new HybridConnectionClientProvider( connStr! );
+		var provider = HybridConnectionProviderFactory.Create( new Proxy { HybridConnectionString = connStr }, "azure-test" );
 		var (proxyListener, proxyPort) = StartListener();
 		_ = ClientProxy.Create( provider, proxyListener, cts.Token );
 

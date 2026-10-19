@@ -1,0 +1,125 @@
+# Builds, tests and publishes a GitHub release when a v* tag is pushed.
+#
+# Assets (see eng/package.sh):
+#   HybridConnectionClientProxy-<version>-linux-x64.tar.gz
+#   HybridConnectionClientProxy-<version>-win-x64.zip
+#   SHA256SUMS
+# each with a build provenance attestation: gh attestation verify <file> -R alasdaircs/HybridConnectionClientProxy
+#
+# Run manually (workflow_dispatch) for a dry run: it builds, tests and packages, and uploads the assets as a
+# workflow artifact, but creates no attestation and no release.
+
+name: Release
+
+on:
+  push:
+    tags: [ "v*" ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to stamp on the dry-run build (default 0.0.0-dryrun.<run number>). No release is created.
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    uses: ./.github/workflows/dotnet.yml
+    secrets:
+      APPSETTINGS: ${{ secrets.APPSETTINGS }}
+
+  package:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write      # sign the provenance attestation (Sigstore)
+      attestations: write  # store the attestation
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+    - uses: actions/checkout@v7
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 10.0.x
+    - name: Determine version
+      id: version
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        INPUT_VERSION: ${{ inputs.version }}
+        RUN_NUMBER: ${{ github.run_number }}
+      run: |
+        if [ "$EVENT_NAME" = "push" ]; then
+          version="${GITHUB_REF_NAME#v}"
+        else
+          version="${INPUT_VERSION:-0.0.0-dryrun.$RUN_NUMBER}"
+        fi
+        echo "Version: $version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+    - name: Publish and package
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: eng/package.sh "$VERSION" dist
+    - name: Check the linux-x64 binary runs and reports its version
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        mkdir -p smoke
+        tar -xzf "dist/HybridConnectionClientProxy-$VERSION-linux-x64.tar.gz" -C smoke
+        actual="$(smoke/HybridConnectionClientProxy --version)"
+        if [ "$actual" != "$VERSION" ]; then
+          echo "--version printed '$actual', expected '$VERSION'" >&2
+          exit 1
+        fi
+    - name: Attest build provenance
+      if: github.event_name == 'push'
+      uses: actions/attest-build-provenance@v4
+      with:
+        subject-path: |
+          dist/*.tar.gz
+          dist/*.zip
+          dist/SHA256SUMS
+    - name: Upload assets
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-assets
+        path: dist/
+        if-no-files-found: error
+
+  release:
+    needs: package
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create the release and upload its assets
+
+    steps:
+    - name: Download assets
+      uses: actions/download-artifact@v8
+      with:
+        name: release-assets
+        path: dist
+    - name: Create GitHub release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ github.ref_name }}
+        VERSION: ${{ needs.package.outputs.version }}
+      run: |
+        prerelease=()
+        if [[ "$VERSION" == *-* ]]; then
+          prerelease=(--prerelease)
+        fi
+        gh release create "$TAG" dist/* \
+          --repo "$GITHUB_REPOSITORY" \
+          --title "$TAG" \
+          --generate-notes \
+          --verify-tag \
+          "${prerelease[@]}"
