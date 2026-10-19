@@ -1,89 +1,148 @@
-using HybridConnectionClientProxy;
-using HybridConnectionClientProxy.Settings;
+using System.Runtime.InteropServices;
 
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.FileProviders;
+using HybridConnectionClientProxy;
 
 using Serilog;
 
+if( args.Contains( "--version" ) )
+{
+	Console.WriteLine( AppInfo.Version );
+	return ExitCodes.Success;
+}
+
+if( args.Any( arg => arg is "--help" or "-h" or "-?" or "/?" ) )
+{
+	Console.WriteLine( Usage() );
+	return ExitCodes.Success;
+}
+
 // Bootstrap logger — replaced after full configuration is loaded
-Log.Logger = new LoggerConfiguration()
-	.Enrich.FromLogContext()
-	.WriteTo.Console()
-	.WriteTo.Debug()
-	.CreateLogger();
+Log.Logger = Logging.CreateBootstrapLogger();
 
-Log.Information( "Reading Configuration" );
-var configurationManager = new ConfigurationManager();
-configurationManager.AddJsonFile( ConfigurationLocator.DefaultsFile );
-configurationManager.AddJsonFile( ConfigurationLocator.OverlayFile, optional: true );
-#if DEBUG
-configurationManager.AddUserSecrets( typeof( Program ).Assembly, optional: true );
-#endif
-configurationManager.AddEnvironmentVariables();
-configurationManager.AddCommandLine( args );
+using var stopping = new CancellationTokenSource();
 
-Log.Logger = new LoggerConfiguration()
-	.ReadFrom.Configuration( configurationManager )
-	.CreateLogger();
+// SIGTERM (systemd stop, Windows shutdown) and SIGINT (Ctrl+C) request a graceful stop.
+// A second signal while already stopping falls through to the default action and terminates the process.
+using var sigterm = PosixSignalRegistration.Create( PosixSignal.SIGTERM, RequestStop );
+using var sigint  = PosixSignalRegistration.Create( PosixSignal.SIGINT,  RequestStop );
 
-Log.Information( "Started in {WorkingDirectory}", Environment.CurrentDirectory );
-
-var files = configurationManager.GetFileProvider();
-Log.Debug(
-	"{AppSettingsDefaultsFile}: {AppSettingsDefaultsFileExists}",
-	ConfigurationLocator.DefaultsFile,
-	files.GetFileInfo( ConfigurationLocator.DefaultsFile ).Exists
-);
-Log.Debug(
-	"{AppSettingsOverlayFile}: {AppSettingsOverlayFileExists}",
-	ConfigurationLocator.OverlayFile,
-	new PhysicalFileProvider( ConfigurationLocator.OverlayFilePath ).GetFileInfo( ConfigurationLocator.OverlayFileName ).Exists
-);
-
-foreach( var entry in configurationManager.AsEnumerable().OrderBy( pair => pair.Key ) )
+try
 {
-	Log.Verbose( "{Config} = {Value}", entry.Key, entry.Value );
+	return await RunAsync( args, stopping );
+}
+catch( ConfigurationException ex )
+{
+	Log.Fatal( "Configuration error: {Error}", ex.Message );
+	return ExitCodes.ConfigurationError;
+}
+catch( ListenException ex )
+{
+	Log.Fatal( "{Error}", ex.Message );
+	return ExitCodes.ListenError;
+}
+catch( Exception ex )
+{
+	Log.Fatal( "Unexpected error: {Error}", SecretRedactor.RedactText( ex.ToString() ) );
+	return ExitCodes.UnexpectedError;
+}
+finally
+{
+	await Log.CloseAndFlushAsync();
 }
 
-var configurationSection = configurationManager.GetRequiredSection( AppSettings.Section );
-var appSettings = new AppSettings();
-ConfigurationBinder.Bind( configurationSection, appSettings );
-
-Log.Information( "Starting" );
-
-if( appSettings.Proxies.Length == 0 )
-	throw new InvalidOperationException( "You must specify at least one proxy in the configuration." );
-
-using var cts = new CancellationTokenSource();
-var proxyTasks = new List<Task>();
-
-foreach( var proxy in appSettings.Proxies )
+void RequestStop( PosixSignalContext context )
 {
-	if( proxy.HybridConnectionString is null )
-		throw new InvalidOperationException( "Every proxy in configuration must have a HybridConnectionString." );
+	if( stopping.IsCancellationRequested )
+		return;
 
-	if( proxy.ListenPort == 0 )
-		throw new InvalidOperationException( "Every proxy in configuration must have a ListenPort." );
+	context.Cancel = true;
+	Log.Information( "Received {Signal}, stopping", context.Signal );
+	stopping.Cancel();
+}
 
-	Log.Debug( "Adding proxy {ProxyName}", proxy.Name );
-	proxyTasks.Add(
-		ClientProxy.Create(
-			proxy.HybridConnectionString,
-			proxy.ListenAddress,
-			proxy.ListenPort,
-			cts.Token
-		)
+static async Task<int> RunAsync( string[] args, CancellationTokenSource stopping )
+{
+	Log.Information( "Reading Configuration" );
+	var overlay = ConfigurationLocator.Resolve( args );
+	var configuration = AppConfiguration.Build( args, overlay );
+
+	Log.Logger = Logging.CreateLogger( configuration );
+
+	Log.Information(
+		"{Application} {Version} starting (pid {ProcessId}, {Runtime}, {OS})",
+		AppInfo.Name, AppInfo.Version, Environment.ProcessId, RuntimeInformation.FrameworkDescription, RuntimeInformation.RuntimeIdentifier
 	);
+	Log.Debug( "Working directory {WorkingDirectory}, binary directory {BaseDirectory}", Environment.CurrentDirectory, AppContext.BaseDirectory );
+
+	var defaultsFile = Path.Combine( AppContext.BaseDirectory, ConfigurationLocator.DefaultsFile );
+	Log.Debug( "{AppSettingsDefaultsFile}: {AppSettingsDefaultsFileExists}", defaultsFile, File.Exists( defaultsFile ) );
+	Log.Debug(
+		"{AppSettingsOverlayFile} (from {AppSettingsOverlaySource}): {AppSettingsOverlayFileExists}",
+		overlay.File, AppConfiguration.DescribeSource( overlay.Source ), File.Exists( overlay.File )
+	);
+
+	foreach( var entry in AppConfiguration.LoggableSettings( configuration ) )
+	{
+		Log.Debug( "{Config} = {Value}", entry.Key, entry.Value );
+	}
+
+	var appSettings = AppConfiguration.BindAppSettings( configuration );
+
+	Log.Information( "Starting" );
+	var host = ProxyHost.Start( appSettings, HybridConnectionProviderFactory.Create );
+
+	Log.Information( "Running" );
+	if( !Console.IsInputRedirected && Environment.UserInteractive )
+	{
+		Console.WriteLine( "Press a key or Ctrl+C to stop" );
+		_ = Task.Run( () =>
+		{
+			try
+			{
+				Console.ReadKey( true );
+				stopping.Cancel();
+			}
+			catch( InvalidOperationException )
+			{
+				// no usable console; signals still work
+			}
+		} );
+	}
+
+	try
+	{
+		await Task.Delay( Timeout.Infinite, stopping.Token );
+	}
+	catch( OperationCanceledException )
+	{
+	}
+
+	Log.Information( "Stopping" );
+	var shutdownTimeout = TimeSpan.FromSeconds( 5 );
+	if( !await host.StopAsync( shutdownTimeout ) )
+		Log.Warning( "Connections still open after {ShutdownTimeout}; exiting anyway", shutdownTimeout );
+
+	Log.Information( "Stopped" );
+	return ExitCodes.Success;
 }
 
-Log.Information( "Running" );
-Console.WriteLine( "Press a key to stop" );
-Console.ReadKey( true );
+static string Usage()
+	=> $"""
+		{AppInfo.Name} {AppInfo.Version}
+		Forwards local TCP ports through Azure Relay Hybrid Connections.
 
-Log.Information( "Stopping" );
-await cts.CancelAsync();
-await Task.WhenAll( proxyTasks );
+		Usage: {AppInfo.Name} [--config <dir>] [--<Section>:<Key>=<Value> ...]
 
-Log.Information( "Stopped" );
-await Log.CloseAndFlushAsync();
+		  --config <dir>  Directory holding appsettings.<MachineName>.json. Defaults to
+		                  ${ConfigurationLocator.ConfigDirectoryVariable}, then the config directory beside the binary.
+		  --version       Print the version and exit.
+		  --help          Print this help and exit.
+
+		Settings are read from appsettings.json, the machine settings file, environment
+		variables and the command line, later sources winning. For example:
+		  AppSettings__Proxies__0__Name=example
+		  AppSettings__Proxies__0__HybridConnectionString=Endpoint=sb://...;EntityPath=...
+		  AppSettings__Proxies__0__ListenPort=14331
+
+		Exit codes: {ExitCodes.Success} stopped, {ExitCodes.UnexpectedError} unexpected error, {ExitCodes.ConfigurationError} configuration error, {ExitCodes.ListenError} cannot listen.
+		""";

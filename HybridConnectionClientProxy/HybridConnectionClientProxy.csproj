@@ -6,6 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UserSecretsId>eb380b7a-0bcd-4399-84ef-0d994ab63de3</UserSecretsId>
+    <!-- Overridden from the release tag: dotnet publish -p:Version=1.2.3 -->
+    <Version>0.0.0-dev</Version>
+    <!-- Keep the informational version (printed by the version switch) identical to the tag -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
   <!-- Expose internals to the test project -->
@@ -17,6 +21,7 @@
 
   <ItemGroup>
     <None Include="../.github/workflows/dotnet.yml" />
+    <None Include="../.github/workflows/release.yml" />
   </ItemGroup>
 
   <ItemGroup>
@@ -40,6 +45,13 @@
   <ItemGroup>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </None>
+    <!-- Windows-only defaults (file logging under %TEMP%, debugger output); not shipped in non-Windows publishes -->
+    <None Update="appsettings.Windows.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory Condition="'$(RuntimeIdentifier)' != '' And !$(RuntimeIdentifier.StartsWith('win'))">Never</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </None>
   </ItemGroup>
 

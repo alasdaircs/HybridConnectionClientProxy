@@ -8,6 +8,14 @@ on:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+  # Called by release.yml so a release is only built from a commit that passes the same build and tests
+  workflow_call:
+    secrets:
+      APPSETTINGS:
+        required: false
+
+permissions:
+  contents: read
 
 jobs:
   build:
