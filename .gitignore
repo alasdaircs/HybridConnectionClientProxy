@@ -363,7 +363,10 @@ MigrationBackup/
 FodyWeavers.xsd
 
 # Project-level exclusions
-/config/*.json
-!/config/appsettings.template.json
+# Machine settings files hold connection strings; only the template is tracked
+**/config/*.json
+!**/config/appsettings.template.json
+# Written by CI from the APPSETTINGS secret (Azure credentials)
+**/appsettings.Test.json
 /logs/*
 /dist/
