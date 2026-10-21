@@ -101,6 +101,10 @@ adds a rolling file under `%TEMP%` and the Debug sink; the Debug sink is never e
 .NET routes Debug output to syslog, duplicating every journal line). `Console.WriteLine` is reserved for
 `--version`, `--help` and the interactive "Press a key" prompt; everything else is logged.
 
+This is how HCCP meets generic LOG9. It compares only the inode, read from the `/proc/self/fd/1` link target
+(`socket:[<inode>]`), rather than `device:inode` from `fstat`: .NET has no managed `fstat`, and sockets all
+share the sockfs device, so the inode identifies the journal socket. Do not flag the missing device comparison.
+
 ## Telemetry (TEL)
 
 **H-TEL-1 Logs are the only telemetry, deliberately.** No metrics, tracing or health endpoint, and no
