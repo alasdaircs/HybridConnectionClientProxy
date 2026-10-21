@@ -1,3 +1,5 @@
+using System.Reflection;
+
 using Microsoft.Extensions.Configuration;
 
 using Serilog;
@@ -16,10 +18,39 @@ internal static class Logging
 	public const string JournaldOutputTemplate = "{SyslogPriority:l}[{Level:u3}] {Message:lj}{NewLine}{Exception}";
 
 	/// <summary>
-	/// systemd sets JOURNAL_STREAM when a service's stdout or stderr is connected to the journal.
+	/// Whether stdout is connected to the systemd journal.
 	/// </summary>
-	public static bool IsJournald
-		=> !string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "JOURNAL_STREAM" ) );
+	public static bool IsJournald { get; } = OperatingSystem.IsLinux() && IsJournalStream(
+		Environment.GetEnvironmentVariable( "JOURNAL_STREAM" ),
+		ReadLinkTarget( "/proc/self/fd/1" )
+	);
+
+	/// <summary>
+	/// systemd sets JOURNAL_STREAM to "&lt;device&gt;:&lt;inode&gt;" of the journal socket it connects a service to.
+	/// Child processes inherit the variable even when their own output goes elsewhere, so it only counts when
+	/// stdout (<paramref name="stdoutLinkTarget"/>, from /proc/self/fd/1) is that socket.
+	/// </summary>
+	internal static bool IsJournalStream( string? journalStream, string? stdoutLinkTarget )
+	{
+		if( string.IsNullOrEmpty( journalStream ) || string.IsNullOrEmpty( stdoutLinkTarget ) )
+			return false;
+
+		var separator = journalStream.IndexOf( ':' );
+		return separator > 0 && stdoutLinkTarget == $"socket:[{journalStream[( separator + 1 )..]}]";
+	}
+
+	private static string? ReadLinkTarget( string path )
+	{
+		try
+		{
+			return new FileInfo( path ).LinkTarget;
+		}
+		catch( Exception ex ) when( ex is IOException or UnauthorizedAccessException )
+		{
+			// No /proc (or no access): treat as not the journal
+			return null;
+		}
+	}
 
 	/// <summary>
 	/// Configuration applied over the defaults when running under journald; machine settings,
@@ -31,7 +62,6 @@ internal static class Logging
 	public static Logger CreateBootstrapLogger()
 	{
 		var logger = new LoggerConfiguration()
-			.Enrich.FromLogContext()
 			.Enrich.With<SyslogPriorityEnricher>();
 
 		// On Linux, .NET sends Debug output to syslog, which would duplicate every line in the journal
@@ -44,6 +74,7 @@ internal static class Logging
 		).CreateLogger();
 	}
 
+	/// <exception cref="ConfigurationException">The Serilog section is invalid.</exception>
 	public static Logger CreateLogger( IConfiguration configuration )
 	{
 		var logger = new LoggerConfiguration().Enrich.With<SyslogPriorityEnricher>();
@@ -59,7 +90,14 @@ internal static class Logging
 			typeof( LoggerSinkConfigurationDebugExtensions ).Assembly
 		);
 
-		return logger.ReadFrom.Configuration( configuration, options ).CreateLogger();
+		try
+		{
+			return logger.ReadFrom.Configuration( configuration, options ).CreateLogger();
+		}
+		catch( Exception ex ) when( ex is InvalidOperationException or ArgumentException or FormatException or TargetInvocationException )
+		{
+			throw new ConfigurationException( $"Invalid Serilog configuration: {SecretRedactor.Describe( ex )}" );
+		}
 	}
 }
 
