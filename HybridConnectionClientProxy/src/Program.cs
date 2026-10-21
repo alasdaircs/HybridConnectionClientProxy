@@ -19,6 +19,16 @@ if( args.Any( arg => arg is "--help" or "-h" or "-?" or "/?" ) )
 // Bootstrap logger — replaced after full configuration is loaded
 Log.Logger = Logging.CreateBootstrapLogger();
 
+// Safety nets for faults that escape the handling in ProxyHost, ClientProxy and ClientProxyConnection
+AppDomain.CurrentDomain.UnhandledException += ( _, e ) =>
+{
+	// The runtime terminates the process after this handler returns, so flush now
+	Log.Fatal( "Unhandled exception: {Error}", SecretRedactor.RedactText( e.ExceptionObject.ToString() ?? "unknown" ) );
+	Log.CloseAndFlush();
+};
+TaskScheduler.UnobservedTaskException += ( _, e ) =>
+	Log.Warning( "Unobserved task exception: {Error}", SecretRedactor.Describe( e.Exception ) );
+
 using var stopping = new CancellationTokenSource();
 
 // SIGTERM (systemd stop, Windows shutdown) and SIGINT (Ctrl+C) request a graceful stop.
@@ -39,6 +49,11 @@ catch( ListenException ex )
 {
 	Log.Fatal( "{Error}", ex.Message );
 	return ExitCodes.ListenError;
+}
+catch( AcceptLoopFailedException )
+{
+	Log.Fatal( "A proxy stopped accepting connections; exiting so the service manager can restart" );
+	return ExitCodes.UnexpectedError;
 }
 catch( Exception ex )
 {
@@ -109,18 +124,15 @@ static async Task<int> RunAsync( string[] args, CancellationTokenSource stopping
 		} );
 	}
 
-	try
-	{
-		await Task.Delay( Timeout.Infinite, stopping.Token );
-	}
-	catch( OperationCanceledException )
-	{
-	}
+	var stopRequested = Task.Delay( Timeout.Infinite, stopping.Token );
+	var failed = await Task.WhenAny( stopRequested, host.AcceptLoopFailed ) == host.AcceptLoopFailed;
 
 	Log.Information( "Stopping" );
-	var shutdownTimeout = TimeSpan.FromSeconds( 5 );
-	if( !await host.StopAsync( shutdownTimeout ) )
-		Log.Warning( "Connections still open after {ShutdownTimeout}; exiting anyway", shutdownTimeout );
+	if( !await host.StopAsync( ProxyHost.ShutdownTimeout ) )
+		Log.Warning( "Connections still open after {ShutdownTimeout}; exiting anyway", ProxyHost.ShutdownTimeout );
+
+	if( failed )
+		throw new AcceptLoopFailedException();
 
 	Log.Information( "Stopped" );
 	return ExitCodes.Success;

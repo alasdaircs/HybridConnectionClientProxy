@@ -232,6 +232,48 @@ public class ClientProxyIntegrationTests
 		await proxyTask;
 	}
 
+	[Fact]
+	public async Task Proxy_WhenListenerClosedUnexpectedly_ReportsAcceptLoopFailure()
+	{
+		using var cts = new CancellationTokenSource( TestTimeoutMs );
+
+		var (proxyListener, _) = StartListener();
+		var (backendListener, backendPort) = StartListener();
+		var failed = new TaskCompletionSource();
+
+		var proxyTask = ClientProxy.Create(
+			new TcpHybridConnectionProvider( backendPort ), proxyListener, cts.Token, "test", () => failed.TrySetResult()
+		);
+
+		// Closing the listener while not shutting down is a local fault
+		proxyListener.Stop();
+
+		await failed.Task.WaitAsync( cts.Token );
+		await proxyTask.WaitAsync( cts.Token );
+		backendListener.Stop();
+	}
+
+	[Fact]
+	public async Task Proxy_WhenCancelled_DoesNotReportAcceptLoopFailure()
+	{
+		using var cts = new CancellationTokenSource( TestTimeoutMs );
+
+		var (proxyListener, _) = StartListener();
+		var (backendListener, backendPort) = StartListener();
+		var failed = false;
+
+		var proxyTask = ClientProxy.Create(
+			new TcpHybridConnectionProvider( backendPort ), proxyListener, cts.Token, "test", () => failed = true
+		);
+
+		await cts.CancelAsync();
+		proxyListener.Stop();
+		await proxyTask;
+		backendListener.Stop();
+
+		Assert.False( failed );
+	}
+
 	/// <summary>
 	/// Reads exactly <paramref name="buffer"/>.Length bytes, retrying partial reads as needed.
 	/// This mirrors real network behaviour where data may arrive in multiple TCP segments.
