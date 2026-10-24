@@ -136,8 +136,8 @@ Logging uses [Serilog](https://github.com/serilog/serilog-settings-configuration
 - By default logs go to the console only. Colours are used only on an interactive terminal.
 - On Windows, `appsettings.Windows.json` also writes a daily rolling file to `%TEMP%\HybridConnectionClientProxy-<date>.log`
   and to the debugger output, as earlier versions did.
-- Under systemd, console output goes to the journal without timestamps or colours, each line tagged with its
-  syslog priority, so `journalctl --user -u hybridconnectionclientproxy -p warning` works.
+- When stdout is the systemd journal (`JOURNAL_STREAM` names the stdout socket), console output has no timestamps
+  or colours, and each line is tagged with its syslog priority, so `journalctl --user -u hybridconnectionclientproxy -p warning` works.
 
 ## Running
 
@@ -158,9 +158,12 @@ Exit codes:
 | Code | Meaning |
 |---|---|
 | 0 | Stopped cleanly (signal or key press), or `--version` / `--help` |
-| 1 | Unexpected error |
-| 2 | Configuration error (missing or invalid settings). Restarting will not help until the configuration is fixed |
+| 1 | Unexpected error, including a proxy that stops accepting connections (a local fault; restarting re-binds every port) |
+| 2 | Configuration error (missing or invalid settings, including the `Serilog` section). Restarting will not help until the configuration is fixed |
 | 3 | A listen port could not be bound (in use or not permitted) |
+
+An unhandled exception is logged (Fatal, redacted) before the runtime aborts the process, so it ends by signal
+rather than with one of these codes; systemd's `Restart=on-failure` treats both as failures.
 
 ### As a systemd user service
 

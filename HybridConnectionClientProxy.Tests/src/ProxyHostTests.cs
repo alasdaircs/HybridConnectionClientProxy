@@ -203,6 +203,43 @@ public class ProxyHostTests
 		Assert.True( await host.StopAsync( TimeSpan.FromSeconds( 5 ) ) );
 	}
 
+	[Fact]
+	public async Task RelayRaisedCancellation_IsLoggedAsRelayFailure()
+	{
+		// A cancellation the relay library raises itself (e.g. a timeout) is a relay failure, not a shutdown
+		using var cts = new CancellationTokenSource( TestTimeoutMs );
+		var label = $"cancel-{Guid.NewGuid():N}";
+
+		using var capture = LogCapture.Start();
+		var host = ProxyHost.Start(
+			Settings( new Proxy { Name = label, ListenPort = FreePort() } ),
+			( _, _ ) => new SelfCancellingProvider()
+		);
+
+		using( var client = new TcpClient() )
+		{
+			await client.ConnectAsync( IPAddress.Loopback, host.ListenEndpoints[0].Port, cts.Token );
+			try { Assert.Equal( 0, await client.GetStream().ReadAsync( new byte[1], cts.Token ) ); }
+			catch( IOException ) { } // reset instead of EOF is also a drop
+		}
+
+		Assert.True( await host.StopAsync( TimeSpan.FromSeconds( 5 ) ) );
+		Assert.Contains(
+			capture.Events,
+			e => e.Level == Serilog.Events.LogEventLevel.Warning
+				&& e.RenderMessage().Contains( label )
+				&& e.RenderMessage().Contains( "relay connection failed" )
+				&& e.RenderMessage().Contains( "TaskCanceledException" )
+		);
+	}
+
+	/// <summary>Simulates the relay library timing out with its own cancellation.</summary>
+	private sealed class SelfCancellingProvider : IHybridConnectionProvider
+	{
+		public Task<Stream> CreateConnectionAsync( CancellationToken cancellationToken = default )
+			=> Task.FromException<Stream>( new TaskCanceledException( "relay operation timed out" ) );
+	}
+
 	/// <summary>Simulates an unreachable relay or a rejected key.</summary>
 	private sealed class FailingProvider : IHybridConnectionProvider
 	{

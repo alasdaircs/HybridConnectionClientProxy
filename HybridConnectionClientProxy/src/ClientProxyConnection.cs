@@ -27,9 +27,10 @@ internal class ClientProxyConnection
 			{
 				hycoStream = await hycoProvider.CreateConnectionAsync( cts.Token );
 			}
-			catch( Exception ex ) when( ex is not OperationCanceledException )
+			catch( Exception ex ) when( !cts.IsCancellationRequested )
 			{
 				// The relay (or the on-prem listener behind it) is unavailable: drop this client, keep listening.
+				// This includes cancellations the relay library raises itself, e.g. a timeout.
 				Log.Warning(
 					"Proxy {Proxy}: connection {ConnectionId} dropped, relay connection failed: {Error}",
 					proxyLabel, id, SecretRedactor.Describe( ex )
@@ -61,7 +62,7 @@ internal class ClientProxyConnection
 
 			Log.Debug( "Proxy {Proxy}: connection {ConnectionId} closed", proxyLabel, id );
 		}
-		catch( OperationCanceledException )
+		catch( OperationCanceledException ) when( cts.IsCancellationRequested )
 		{
 			// quiet - expected on shutdown or when the remote side closes first
 		}

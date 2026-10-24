@@ -13,16 +13,34 @@ namespace HybridConnectionClientProxy;
 internal sealed class ListenException( string message, Exception inner ) : Exception( message, inner );
 
 /// <summary>
+/// A proxy stopped accepting connections while the process was running. The cause has already been logged.
+/// </summary>
+internal sealed class AcceptLoopFailedException() : Exception( "A proxy stopped accepting connections." );
+
+/// <summary>
 /// Runs every configured proxy: validates the configuration, binds all listen ports up front
 /// (so that configuration and bind errors fail the process at startup), and stops them together.
 /// </summary>
 internal sealed class ProxyHost
 {
+	/// <summary>
+	/// How long <see cref="StopAsync"/> waits for open connections. A service manager's stop timeout
+	/// (systemd TimeoutStopSec) must be longer.
+	/// </summary>
+	public static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds( 5 );
+
 	private readonly CancellationTokenSource _stopping = new();
+	private readonly TaskCompletionSource _acceptLoopFailed = new( TaskCreationOptions.RunContinuationsAsynchronously );
 	private readonly List<TcpListener> _listeners = [];
 	private readonly List<Task> _proxies = [];
 
 	private ProxyHost() { }
+
+	/// <summary>
+	/// Completes if any proxy stops accepting connections other than through <see cref="StopAsync"/>.
+	/// </summary>
+	public Task AcceptLoopFailed
+		=> _acceptLoopFailed.Task;
 
 	public IReadOnlyList<IPEndPoint> ListenEndpoints
 		=> _listeners.Select( listener => (IPEndPoint) listener.LocalEndpoint ).ToList();
@@ -85,7 +103,9 @@ internal sealed class ProxyHost
 		{
 			var (_, label, provider) = planned[i];
 			Log.Information( "Proxy {Proxy}: listening on {ListenEndpoint}", label, host._listeners[i].LocalEndpoint );
-			host._proxies.Add( ClientProxy.Create( provider, host._listeners[i], host._stopping.Token, label ) );
+			host._proxies.Add( ClientProxy.Create(
+				provider, host._listeners[i], host._stopping.Token, label, () => host._acceptLoopFailed.TrySetResult()
+			) );
 		}
 
 		return host;
@@ -115,6 +135,7 @@ internal sealed class ProxyHost
 	{
 		foreach( var listener in _listeners )
 		{
+			// Best effort: the listener may already be stopped, and shutdown carries on regardless
 			try { listener.Stop(); } catch { }
 		}
 	}

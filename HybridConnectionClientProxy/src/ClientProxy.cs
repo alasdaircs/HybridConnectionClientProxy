@@ -7,6 +7,11 @@ namespace HybridConnectionClientProxy;
 
 public class ClientProxy
 {
+	/// <summary>
+	/// Pause after a transient accept failure, so a persistent one cannot spin.
+	/// </summary>
+	private static readonly TimeSpan AcceptRetryDelay = TimeSpan.FromMilliseconds( 100 );
+
 	private int _connectionCount;
 	private readonly ConcurrentDictionary<int, Task> _connections = new();
 
@@ -16,6 +21,7 @@ public class ClientProxy
 		IHybridConnectionProvider hycoProvider,
 		TcpListener tcpListener,
 		string proxyLabel,
+		Action? onAcceptLoopFailed,
 		CancellationToken cancellation )
 	{
 		try
@@ -31,7 +37,7 @@ public class ClientProxy
 				{
 					// e.g. the client reset before the accept completed: keep listening
 					Log.Warning( "Proxy {Proxy}: accept failed, continuing: {Error}", proxyLabel, ex.SocketErrorCode );
-					await Task.Delay( 100, cancellation );
+					await Task.Delay( AcceptRetryDelay, cancellation );
 					continue;
 				}
 
@@ -47,7 +53,10 @@ public class ClientProxy
 		}
 		catch( Exception ex )
 		{
+			// Relay and network faults never reach here (they are per connection), so this is a local fault:
+			// the owner ends the process and the service manager restarts it.
 			Log.Error( "Proxy {Proxy}: stopped accepting connections: {Error}", proxyLabel, SecretRedactor.Describe( ex ) );
+			onAcceptLoopFailed?.Invoke();
 		}
 		finally
 		{
@@ -63,14 +72,17 @@ public class ClientProxy
 	/// Accepts connections on an already started <paramref name="tcpListener"/> and forwards each one through
 	/// <paramref name="hycoProvider"/> until <paramref name="cancellation"/> is signalled. The caller owns the
 	/// listener lifecycle (Start/Stop). The returned task completes once every forwarded connection has closed.
+	/// <paramref name="onAcceptLoopFailed"/> is called, before open connections are drained, if accepting stops
+	/// for any reason other than <paramref name="cancellation"/>.
 	/// </summary>
 	internal static Task Create(
 		IHybridConnectionProvider hycoProvider,
 		TcpListener tcpListener,
 		CancellationToken cancellation = default,
-		string? proxyLabel = null )
+		string? proxyLabel = null,
+		Action? onAcceptLoopFailed = null )
 	{
 		var proxy = new ClientProxy();
-		return proxy.Run( hycoProvider, tcpListener, proxyLabel ?? tcpListener.LocalEndpoint.ToString() ?? "?", cancellation );
+		return proxy.Run( hycoProvider, tcpListener, proxyLabel ?? tcpListener.LocalEndpoint.ToString() ?? "?", onAcceptLoopFailed, cancellation );
 	}
 }
