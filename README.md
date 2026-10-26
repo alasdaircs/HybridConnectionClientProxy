@@ -23,7 +23,7 @@ on-prem endpoint registered behind the hybrid connection.
 
 ## Installing a release
 
-Each [release](https://github.com/alasdaircs/HybridConnectionClientProxy/releases) has:
+Each [release](https://github.com/ACS-Solutions/HybridConnectionClientProxy/releases) has:
 
 | Asset | Contents | Needs |
 |---|---|---|
@@ -40,9 +40,9 @@ release workflow from the tagged commit:
 
 ```sh
 VERSION=1.0.0
-gh release download "v$VERSION" -R alasdaircs/HybridConnectionClientProxy
+gh release download "v$VERSION" -R ACS-Solutions/HybridConnectionClientProxy
 sha256sum --check --ignore-missing SHA256SUMS
-gh attestation verify "HybridConnectionClientProxy-$VERSION-linux-x64.tar.gz" -R alasdaircs/HybridConnectionClientProxy
+gh attestation verify "HybridConnectionClientProxy-$VERSION-linux-x64.tar.gz" -R ACS-Solutions/HybridConnectionClientProxy
 ```
 
 Then, for example:
@@ -184,7 +184,7 @@ systemd-ask-password -n "lonsql07dev-sql connection string:" \
 ```ini
 [Unit]
 Description=Azure Relay Hybrid Connection client proxy
-Documentation=https://github.com/alasdaircs/HybridConnectionClientProxy
+Documentation=https://github.com/ACS-Solutions/HybridConnectionClientProxy
 
 [Service]
 Type=exec
